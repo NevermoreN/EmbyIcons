@@ -14,7 +14,9 @@ using System.Runtime.InteropServices;
 
 [assembly: Guid("5ba28f85-65d0-4c24-b4b2-4f195826c549")]
 
-[assembly: AssemblyVersion("5.61.1.5")]
-[assembly: AssemblyFileVersion("5.61.1.5")]
+[assembly: AssemblyVersion("5.61.1.7")]
+[assembly: AssemblyFileVersion("5.61.1.7")]
 
-[assembly: AssemblyInformationalVersion("5.61.1.5-nevermore.1")]
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("EmbyIcons.Tests")]
+
+[assembly: AssemblyInformationalVersion("5.61.1.7-nevermore.2")]

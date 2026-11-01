@@ -1,16 +1,27 @@
 ## NevermoreN fork
 
-This fork is displayed as **EmbyIcons (NevermoreN)** and uses plugin ID `5ba28f85-65d0-4c24-b4b2-4f195826c549`. Both its ID and display name differ from the upstream catalog entry, so Emby does not match it to official EmbyIcons updates. Configuration pages use the same fork ID. Other plugins keep their normal update behavior.
+This fork is displayed as **EmbyIcons (NevermoreN)** and uses plugin ID `5ba28f85-65d0-4c24-b4b2-4f195826c549`. Its ID and display name differ from the upstream catalog entry, so Emby does not match it to official EmbyIcons updates. Configuration pages use the same fork ID. Other plugins keep their normal update behavior.
 
-The source baseline is **5.61.1.5**, with informational version `5.61.1.5-nevermore.1`. This is not a copy of upstream 5.61.1.7.
+The current build is **5.61.1.7-nevermore.2**. It combines upstream commit `c4cfea405930d4d1cd84113085d074b062cc7135` with the NAS's previously deployed local 5.61.1.7 source. That NAS build was a customized build, not an unmodified upstream package.
 
-Build with the .NET 8 SDK:
+### Persistent images and avoiding duplicate rendering
+
+Finished overlay images remain in Emby's `cache/images/enhanced-images` directory; resized outputs remain in `cache/images/resized-images`. The plugin keeps compatible image bindings and input fingerprints in `data/EmbyIcons/image-state-v2`. These paths are relative to Emby's persistent configuration directory. For the existing NAS deployment, that directory is `/volume1/docker/emby/config`.
+
+Keep those directories and `plugins/configurations/embyicons.xml` across updates. This fork retains the local stable image-key algorithm, partitioned on-disk state, rendered-input comparison, and compatible saved aggregation summaries. Restarting Emby, evicting in-memory profile caches, renaming a profile, or changing unrelated operational settings does not invalidate an existing image. Visual changes, relevant media changes, external rating refresh intervals, or an explicit cache refresh can still invalidate affected images. Reuse requires the corresponding image file to remain on disk; Emby's own cache maintenance can remove files.
+
+Upstream's settings-page URL fixes, import validation and library mapping support, administrator API restrictions, template-generation locking, directory-boundary matching, and stale MDBList rating fallback are included. Upstream's simpler revision cache is replaced by the existing local stable state implementation; it must not overwrite `image-state-v2` or change the render compatibility version merely for a release.
+
+### Build, test and install
+
+Use the .NET 8 SDK:
 
 ```sh
 dotnet build EmbyIcons.csproj -c Release
+dotnet test Tests/EmbyIcons.Tests.csproj -c Release
 ```
 
-Back up the existing plugin and `plugins/configurations/embyicons.xml`, stop Emby, then copy `bin/Release/netstandard2.0/EmbyIcons.dll` to `plugins/embyicons.dll` and restart Emby. Keep that exact lowercase destination filename so Emby reuses `embyicons.xml` and the existing `plugins/embyicons` data directory. Replace the upstream DLL; do not leave two copies loaded.
+Back up the existing DLL, `plugins/configurations/embyicons.xml`, `data/EmbyIcons`, and `plugins/embyicons`. Stop Emby, copy `bin/Release/netstandard2.0/EmbyIcons.dll` to `plugins/embyicons.dll`, then start Emby. Keep that exact lowercase destination filename so Emby reuses the existing configuration and plugin data directory. Replace the previous DLL; do not leave two copies loaded. Do not clear Emby's image cache or change `PersistedVersion` as part of an ordinary update.
 
 Install future versions by building this repository and replacing the same DLL while Emby is stopped. This fork does not automatically download GitHub builds. Do not manually install the official catalog entry alongside it.
 
