@@ -37,7 +37,7 @@
 		<EmbeddedResource Include="EmbeddedIcons\ar_16x9.png" />
 		<EmbeddedResource Include="EmbeddedIcons\ar_2.40x1.png" />
 		<EmbeddedResource Include="EmbeddedIcons\ar_40x17.png" />
-		<EmbeddedResource Include="EmbeddedIcons\ar_4x3.png" />
+		<EmbeddedResource Include="EmbeddedIcons\ar..4x3.png" LogicalName="EmbyIcons.EmbeddedIcons.ar_4x3.png" />
 		<EmbeddedResource Include="EmbeddedIcons\bd_16.png" />
 		<EmbeddedResource Include="EmbeddedIcons\bd_24.png" />
 		<EmbeddedResource Include="EmbeddedIcons\bd_32.png" />

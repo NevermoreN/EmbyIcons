@@ -1,10 +1,10 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 
-[assembly: AssemblyTitle("EmbyIcons")]
+[assembly: AssemblyTitle("EmbyIcons (NevermoreN)")]
 [assembly: AssemblyDescription("Overlays language, channel, video format, and resolution icons onto media posters.")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
+[assembly: AssemblyCompany("NevermoreN")]
 [assembly: AssemblyProduct("EmbyIcons")]
 [assembly: AssemblyCopyright("Copyright © 2025")]
 [assembly: AssemblyTrademark("")]
@@ -12,7 +12,9 @@ using System.Runtime.InteropServices;
 
 [assembly: ComVisible(false)]
 
-[assembly: Guid("b8d0f5a4-3e96-4c0f-a6e2-9f0c2ecb5c5f")]
+[assembly: Guid("5ba28f85-65d0-4c24-b4b2-4f195826c549")]
 
 [assembly: AssemblyVersion("5.61.1.5")]
 [assembly: AssemblyFileVersion("5.61.1.5")]
+
+[assembly: AssemblyInformationalVersion("5.61.1.5-nevermore.1")]

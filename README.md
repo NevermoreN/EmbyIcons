@@ -1,3 +1,21 @@
+## NevermoreN fork
+
+This fork is displayed as **EmbyIcons (NevermoreN)** and uses plugin ID `5ba28f85-65d0-4c24-b4b2-4f195826c549`. Both its ID and display name differ from the upstream catalog entry, so Emby does not match it to official EmbyIcons updates. Configuration pages use the same fork ID. Other plugins keep their normal update behavior.
+
+The source baseline is **5.61.1.5**, with informational version `5.61.1.5-nevermore.1`. This is not a copy of upstream 5.61.1.7.
+
+Build with the .NET 8 SDK:
+
+```sh
+dotnet build EmbyIcons.csproj -c Release
+```
+
+Back up the existing plugin and `plugins/configurations/embyicons.xml`, stop Emby, then copy `bin/Release/netstandard2.0/EmbyIcons.dll` to `plugins/embyicons.dll` and restart Emby. Keep that exact lowercase destination filename so Emby reuses `embyicons.xml` and the existing `plugins/embyicons` data directory. Replace the upstream DLL; do not leave two copies loaded.
+
+Install future versions by building this repository and replacing the same DLL while Emby is stopped. This fork does not automatically download GitHub builds. Do not manually install the official catalog entry alongside it.
+
+---
+
 ![image](https://github.com/user-attachments/assets/08e70e95-d4fd-45be-b206-1d0b0922fbe1)
 
 # EmbyIcons Plugin

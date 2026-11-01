@@ -645,9 +645,9 @@ namespace EmbyIcons
         }
 
 
-        public override string Name => "EmbyIcons";
-        public override string Description => "Overlays language, channel, video format, and resolution icons onto media posters.";
-        public override Guid Id => new("b8d0f5a4-3e96-4c0f-a6e2-9f0c2ecb5c5f");
+        public override string Name => "EmbyIcons (NevermoreN)";
+        public override string Description => "NevermoreN fork. Overlays language, channel, video format, and resolution icons onto media posters.";
+        public override Guid Id => new("5ba28f85-65d0-4c24-b4b2-4f195826c549");
 
         public PluginOptions GetConfiguredOptions()
         {

@@ -41,7 +41,7 @@ define([
 ) {
     'use strict';
 
-    const pluginId = "b8d0f5a4-3e96-4c0f-a6e2-9f0c2ecb5c5f";
+    const pluginId = "5ba28f85-65d0-4c24-b4b2-4f195826c549";
 
     class EmbyIconsConfigurationView extends BaseView {
         constructor(view, params) {
