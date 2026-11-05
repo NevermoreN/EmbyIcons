@@ -17,4 +17,4 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyVersion("5.61.1.7")]
 [assembly: AssemblyFileVersion("5.61.1.7")]
 
-[assembly: AssemblyInformationalVersion("5.61.1.7-nevermore.rust.1")]
+[assembly: AssemblyInformationalVersion("5.61.1.7-nevermore.rust.2")]

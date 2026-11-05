@@ -329,6 +329,11 @@ impl Engine {
         }
         let mut relevant = serde_json::Map::new();
         let visual = crate::render::visual_data(&settings, &data);
+        if visual.as_object().is_some_and(|groups| groups.is_empty()) {
+            self.records.remove(&id);
+            self.dirty.insert(bucket(id));
+            return Ok(json!({"skip":true}));
+        }
         if visual.as_object().is_some_and(|groups| {
             groups
                 .values()
@@ -732,6 +737,23 @@ pub fn source(item: &Value, record: Option<&Record>) -> Result<(String, String),
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn absent_enabled_data_skips_and_unpublishes_until_data_arrives() {
+        let mut core = Engine::default();
+        let profile = json!({"Id":"test", "Settings":{"CommunityScoreIconAlignment":1}});
+        core.enqueue(1, true);
+        core.records.get_mut(&1).unwrap().ready = true;
+        let skipped = core.observed(1, 1, json!({"kind":"Movie"}), Some(profile.clone()),
+            json!({"critic":88}), "stamp".into(), "hash".into()).unwrap();
+        assert_eq!(skipped["skip"], true);
+        assert!(!core.records.contains_key(&1));
+        core.enqueue(1, true);
+        let next = core.next();
+        let job = core.observed(1, next["sequence"].as_u64().unwrap(), json!({"kind":"Movie"}),
+            Some(profile), json!({"community":8.1}), "stamp".into(), "hash".into()).unwrap();
+        assert!(job["generation"].as_u64().is_some());
+    }
 
     #[test]
     fn render_failures_exhaust_retries_without_being_reset_by_observation() {

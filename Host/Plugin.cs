@@ -213,36 +213,42 @@ namespace EmbyIcons
             }
         }
 
-        private IEnumerable<Guid[]> ScanPages()
+        private IEnumerable<long[]> ScanPages()
         {
             var scopes = Core!.Execute(new { op = "scopes" });
-            var pilot = scopes.GetProperty("pilot").EnumerateArray().Select(v => Item(v.GetUInt64().ToString())?.Id ?? Guid.Empty).Where(id => id != Guid.Empty).ToArray();
+            var pilot = scopes.GetProperty("pilot").EnumerateArray().Select(v => v.GetInt64()).Where(id => id > 0).ToArray();
             if (pilot.Length > 0) { yield return pilot; yield break; }
             var ids = scopes.GetProperty("libraries").EnumerateArray().Select(v => v.GetString()).ToArray();
             foreach (var folder in _library.GetVirtualFolders().Where(f => ids.Contains(f.Id)))
             {
                 var parent = Item(folder.ItemId);
                 if (parent == null) { Logger.Warn("[EmbyIcons Rust] Skipped unresolved mapped library " + folder.Id); continue; }
-                var snapshot = _library.GetItemIds(new InternalItemsQuery { AncestorIds = new[] { parent.InternalId }, Recursive = true,
+                var snapshot = _library.GetInternalItemIds(new InternalItemsQuery { AncestorIds = new[] { parent.InternalId }, Recursive = true,
                     IncludeItemTypes = new[] { "Movie", "Series" }, IsVirtualItem = false });
                 for (int i = 0; i < snapshot.Length; i += 128) yield return snapshot.Skip(i).Take(128).ToArray();
             }
             if (scopes.GetProperty("collections").GetBoolean())
             {
-                var snapshot = _library.GetItemIds(new InternalItemsQuery { Recursive = true, IncludeItemTypes = new[] { "BoxSet" }, IsVirtualItem = false });
+                var snapshot = _library.GetInternalItemIds(new InternalItemsQuery { Recursive = true, IncludeItemTypes = new[] { "BoxSet" }, IsVirtualItem = false });
                 for (int i = 0; i < snapshot.Length; i += 128) yield return snapshot.Skip(i).Take(128).ToArray();
             }
         }
 
         private async Task Scan(string? batch, IProgress<double>? progress, CancellationToken token)
         {
-            foreach (var page in ScanPages())
+            // Snapshot lightweight IDs for an accurate scan denominator. Full
+            // item metadata is loaded once, by the worker that observes it.
+            var pages = ScanPages().ToArray();
+            var total = pages.Sum(page => page.Length);
+            var scanned = 0;
+            foreach (var page in pages)
             {
                 token.ThrowIfCancellationRequested();
                 while (batch == null && Core!.Execute(new { op = "capacity" }).GetProperty("backpressure").GetBoolean())
                     await Task.Delay(500, token).ConfigureAwait(false);
-                var ids = page.Select(id => _library.GetItemById(id)?.InternalId ?? 0).Where(id => id > 0).ToArray();
-                Core!.Execute(new { op = "notify", ids, batch, automatic = batch == null });
+                Core!.Execute(new { op = "notify", ids = page, batch, automatic = batch == null });
+                scanned += page.Length;
+                progress?.Report(total == 0 ? 50 : 1 + 49.0 * scanned / total);
             }
             progress?.Report(50);
         }
@@ -252,6 +258,7 @@ namespace EmbyIcons
             lock (_manualGate)
             {
                 _stop.Token.ThrowIfCancellationRequested();
+                progress.Report(1);
                 var task = Task.Run(() => RunPreDraw(token, progress));
                 _manualTasks.Add(task);
                 _ = task.ContinueWith(done => { lock (_manualGate) _manualTasks.Remove(done); }, TaskScheduler.Default);
