@@ -57,7 +57,7 @@ define(['loading', 'toast'], function (loading, toast) {
         loading.show();
         try {
             await ApiClient.ajax({ type: "POST", url: ApiClient.getUrl(instance.apiRoutes.RefreshCache) });
-            toast('Cache cleared, icons will be redrawn.');
+            toast('Background poster verification requested. Existing valid images are retained.');
         } catch (error) {
             console.error('Error clearing EmbyIcons cache', error);
             toast({ type: 'error', text: 'Error clearing icon cache.' });

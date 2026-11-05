@@ -83,12 +83,35 @@ define([
                 await this.fetchApiRoutes();
                 await this.loadData();
                 uiHandlers.initAdvancedMode(this);
+                this.limitPosterControls();
             } catch (error) {
                 console.error('Failed to initialize EmbyIcons configuration page', error);
                 toast({ type: 'error', text: 'Error loading page. Please refresh.' });
             } finally {
                 loading.hide();
             }
+        }
+
+        limitPosterControls() {
+            const groups = ['CommunityScore', 'RottenTomatoesScore', 'PopcornScore', 'MyAnimeListScore', 'FavoriteCount', 'ParentalRating'];
+            const shared = /^(IconSize|IconSpacing|EdgePaddingHorizontal|EdgePaddingVertical|RatingFontSizeMultiplier|RatingTextVerticalOffset|RatingPercentageSuffix|TopLeftIconSize|TopRightIconSize|BottomLeftIconSize|BottomRightIconSize|TopLeftHorizontalPadding|TopLeftVerticalPadding|TopRightHorizontalPadding|TopRightVerticalPadding|BottomLeftHorizontalPadding|BottomLeftVerticalPadding|BottomRightHorizontalPadding|BottomRightVerticalPadding|EnableForPosters)$/;
+            const global = new Set(['MDBListApiKey', 'EnableMdbListDiskCache', 'EnableDebugLogging', 'EnableImageSmoothing', 'EnableCollectionProfileLookup', 'ShowAdvancedOptions']);
+            const style = document.createElement('style');
+            style.textContent = '[data-poster-hidden]{display:none!important}';
+            this.view.appendChild(style);
+            this.view.querySelectorAll('[data-profile-key],[data-config-key]').forEach(input => {
+                const key = input.getAttribute('data-profile-key');
+                const supported = key ? shared.test(key) || groups.some(group => key.startsWith(group)) : global.has(input.getAttribute('data-config-key'));
+                if (supported) return;
+                const container = input.closest('.alignment-row,.inputContainer,.checkboxContainer') || input.closest('label') || input;
+                container.setAttribute('data-poster-hidden', '');
+            });
+            this.view.querySelectorAll('[data-segment="tsPanelMusic"],[data-segment="tsPanelCalculator"],#tsPanelMusic,#tsPanelCalculator,.alignment-category-header,#troubleshooterChecksContainer,#movieTroubleshooterChecksContainer').forEach(el => el.setAttribute('data-poster-hidden', ''));
+            this.view.querySelectorAll('.collapsible-section').forEach(section => {
+                const inputs = [...section.querySelectorAll('[data-profile-key],[data-config-key]')];
+                if (inputs.length && inputs.every(input => input.closest('[data-poster-hidden]'))) section.setAttribute('data-poster-hidden', '');
+            });
+            this.view.querySelectorAll('#safeZoneEditorContainer,#filenameMappingsContainer,#tagMappingsContainer').forEach(el => el.closest('.collapsible-section')?.setAttribute('data-poster-hidden', ''));
         }
 
         onPause() {

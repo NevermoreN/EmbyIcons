@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("EmbyIcons (NevermoreN)")]
-[assembly: AssemblyDescription("Overlays language, channel, video format, and resolution icons onto media posters.")]
+[assembly: AssemblyDescription("Rust background poster overlays with persistent Emby cache reuse.")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("NevermoreN")]
 [assembly: AssemblyProduct("EmbyIcons")]
@@ -17,6 +17,4 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyVersion("5.61.1.7")]
 [assembly: AssemblyFileVersion("5.61.1.7")]
 
-[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("EmbyIcons.Tests")]
-
-[assembly: AssemblyInformationalVersion("5.61.1.7-nevermore.2")]
+[assembly: AssemblyInformationalVersion("5.61.1.7-nevermore.rust.1")]

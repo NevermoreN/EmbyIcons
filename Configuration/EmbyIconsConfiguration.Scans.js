@@ -97,6 +97,11 @@ define(['loading', 'toast'], function (loading, toast) {
         parts.push(`<p class="fieldDescription" style="margin-bottom: 1.5em;">Breakdown of ${stats.TotalItems.toLocaleString()} media items in your library</p>`);
         
         parts.push(`<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5em;">`);
+        if (stats.PosterCounts) {
+            parts.push(renderStatCard('Posters', stats.PosterCounts, stats.TotalItems || 1, '#3498db'));
+            parts.push('</div></div>');
+            return parts.join('');
+        }
         
         if (Object.keys(stats.ResolutionCounts).length > 0) {
             parts.push(renderStatCard('Resolution', stats.ResolutionCounts, stats.TotalItems, '#3498db'));
@@ -191,7 +196,7 @@ define(['loading', 'toast'], function (loading, toast) {
         }
         instance.itemListCloseHandlers = [];
         
-        const friendlyNames = { Language: 'Audio Languages', Subtitle: 'Subtitle Languages', Channel: 'Audio Channels', AudioCodec: 'Audio Codecs', VideoCodec: 'Video Codecs', VideoFormat: 'Video Formats', Resolution: 'Resolutions', AspectRatio: 'Aspect Ratios', Tag: 'Custom Tags', ParentalRating: 'Parental Ratings', FrameRate: 'Frame Rates', OriginalLanguage: 'Original Languages', SeriesStatus: 'Series Status' };
+        const friendlyNames = { CommunityRating: 'Ratings and Favorites', ParentalRating: 'Parental Ratings' };
         const prefixMap = { Language: "lang.", Subtitle: "sub.", Channel: "ch.", AudioCodec: "ac.", VideoCodec: "vc.", VideoFormat: "hdr.", Resolution: "res.", AspectRatio: "ar.", Tag: "tag.", ParentalRating: "pr.", FrameRate: "fps.", OriginalLanguage: "og.", SeriesStatus: "series." };
 
         const htmlParts = [];
@@ -444,7 +449,7 @@ define(['loading', 'toast'], function (loading, toast) {
                 return `<div class="paper-card" style="padding: 1em 1.5em; margin-top: 1em;"><h4 style="margin:0; color: #ffc107;">${check.CheckName}</h4><p class="fieldDescription" style="margin: 0.5em 0;">${check.Message}</p><ul style="margin: 1em 0 0.5em; padding-left: 1.5em; list-style-type: disc;">${episodesHtml}</ul></div>`;
             }).join('');
 
-            return `<div class="report-group collapsible" style="margin-bottom: 1em;"><div class="collapsible-header paper-card" style="padding: 1em 1.5em; cursor: pointer; display: flex; align-items: center; justify-content: space-between;"><h2 style="margin: 0;">${report.SeriesName} <span class="fieldDescription">(${report.TotalEpisodes} episodes)</span></h2><i class="md-icon collapsible-indicator" style="transition: transform 0.2s ease;">keyboard_arrow_down</i></div><div class="collapsible-content" style="display: none; padding-top: 0.5em;">${checksHtml}</div></div>`;
+            return `<div class="report-group collapsible" style="margin-bottom: 1em;"><div class="collapsible-header paper-card" style="padding: 1em 1.5em; cursor: pointer; display: flex; align-items: center; justify-content: space-between;"><h2 style="margin: 0;">${report.SeriesName} <span class="fieldDescription">(${report.Scope || (report.TotalEpisodes + " episodes")})</span></h2><i class="md-icon collapsible-indicator" style="transition: transform 0.2s ease;">keyboard_arrow_down</i></div><div class="collapsible-content" style="display: none; padding-top: 0.5em;">${checksHtml}</div></div>`;
         }).join('');
 
         container.innerHTML = (html.trim() === '') ? '<h2>Scan Complete</h2><p>No inconsistencies found in any TV show for the selected criteria.</p>' : html;

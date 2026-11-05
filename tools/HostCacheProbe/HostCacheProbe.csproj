@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Interop/NativeCore.cs" Link="NativeCore.cs" />
+    <PackageReference Include="Moq" Version="4.20.72" />
+    <Reference Include="Emby.Drawing"><HintPath>$(EmbyHostPath)/Emby.Drawing.dll</HintPath></Reference>
+    <Reference Include="Emby.Api"><HintPath>$(EmbyHostPath)/Emby.Api.dll</HintPath></Reference>
+    <Reference Include="Emby.Server.Implementations"><HintPath>$(EmbyHostPath)/Emby.Server.Implementations.dll</HintPath></Reference>
+    <Reference Include="MediaBrowser.Controller"><HintPath>$(EmbyHostPath)/MediaBrowser.Controller.dll</HintPath></Reference>
+    <Reference Include="MediaBrowser.Model"><HintPath>$(EmbyHostPath)/MediaBrowser.Model.dll</HintPath></Reference>
+    <Reference Include="MediaBrowser.Common"><HintPath>$(EmbyHostPath)/MediaBrowser.Common.dll</HintPath></Reference>
+    <Reference Include="Emby.Media.Model"><HintPath>$(EmbyHostPath)/Emby.Media.Model.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>
