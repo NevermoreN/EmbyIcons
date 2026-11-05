@@ -99,7 +99,7 @@ namespace EmbyIcons
             var members = item is BoxSet ? _library.GetItemList(new InternalItemsQuery
             { CollectionIds = new[] { item.InternalId }, IncludeItemTypes = new[] { "Movie", "Series" }, Recursive = true, Limit = 1 }) : Array.Empty<BaseItem>();
             var favorites = _users.GetUserIds(new UserQuery()).Items.Select(id => _users.GetUserById(id))
-                .Where(user => user != null && item.IsVisibleStandalone(user)).Select(user => _userData.GetUserData(user, item)?.IsFavorite ?? false).ToArray();
+                .Where(user => user != null).Select(user => _userData.GetUserData(user, item)?.IsFavorite ?? false).ToArray();
             return new { id = item.InternalId, guid = item.Id.ToString("N"), kind = item.GetType().Name, name = item.Name,
                 path = item.Path, parent_id = item.ParentId, series_id = item.SeriesId, original = image?.Path,
                 image_ticks = image?.DateModified.UtcTicks, community = item.CommunityRating, critic = item.CriticRating,
@@ -132,14 +132,14 @@ namespace EmbyIcons
 
         private void Changed(object? sender, ItemChangeEventArgs e) => Forward(e.Item, false);
         private void Removed(object? sender, ItemChangeEventArgs e) => Forward(e.Item, true);
-        private void Forward(BaseItem? item, bool removed)
+        private void Forward(BaseItem? item, bool removed, bool favoriteChange = false)
         {
             if (item == null || Core == null || _stop.IsCancellationRequested) return;
             Core.Execute(new { op = "event", id = item.InternalId, kind = item.GetType().Name,
-                path = item.Path, parent_id = item.ParentId, series_id = item.SeriesId, removed });
+                path = item.Path, parent_id = item.ParentId, series_id = item.SeriesId, removed, favorite_change = favoriteChange });
         }
         private void UserChanged(object? sender, UserDataSaveEventArgs e)
-        { if (e.SaveReason == UserDataSaveReason.UpdateUserRating) Forward(e.Item, false); }
+        { if (e.SaveReason == UserDataSaveReason.UpdateUserRating) Forward(e.Item, false, true); }
         private void CollectionChanged(object? sender, CollectionModifiedEventArgs e) => Forward(e.Collection, false);
 
         private async Task Drive()
@@ -177,6 +177,7 @@ namespace EmbyIcons
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
                 { if (id > 0) Core!.Execute(new { op = "cancel", id, generation }); break; }
                 catch (LegacyAliasMissingException) { }
+                catch (SupersededImageJobException) { /* The native core already queued the newer event. */ }
                 catch (Exception ex)
                 {
                     if (id > 0) Core!.Execute(new { op = "fail", id, generation, error = ex.Message });
@@ -218,18 +219,30 @@ namespace EmbyIcons
             var scopes = Core!.Execute(new { op = "scopes" });
             var pilot = scopes.GetProperty("pilot").EnumerateArray().Select(v => v.GetInt64()).Where(id => id > 0).ToArray();
             if (pilot.Length > 0) { yield return pilot; yield break; }
+            // Favorites apply server-wide, including libraries without a profile.
+            var favorites = new HashSet<long>();
+            foreach (var userId in _users.GetUserIds(new UserQuery()).Items)
+            {
+                var user = _users.GetUserById(userId);
+                if (user == null) continue;
+                favorites.UnionWith(_library.GetInternalItemIds(new InternalItemsQuery(user) { Recursive = true,
+                    IsFavorite = true, IncludeItemTypes = new[] { "Movie", "Series", "BoxSet" }, IsVirtualItem = false }));
+            }
+            var favoriteIds = favorites.ToArray();
+            for (int i = 0; i < favoriteIds.Length; i += 128) yield return favoriteIds.Skip(i).Take(128).ToArray();
             var ids = scopes.GetProperty("libraries").EnumerateArray().Select(v => v.GetString()).ToArray();
             foreach (var folder in _library.GetVirtualFolders().Where(f => ids.Contains(f.Id)))
             {
                 var parent = Item(folder.ItemId);
                 if (parent == null) { Logger.Warn("[EmbyIcons Rust] Skipped unresolved mapped library " + folder.Id); continue; }
                 var snapshot = _library.GetInternalItemIds(new InternalItemsQuery { AncestorIds = new[] { parent.InternalId }, Recursive = true,
-                    IncludeItemTypes = new[] { "Movie", "Series" }, IsVirtualItem = false });
+                    IncludeItemTypes = new[] { "Movie", "Series" }, IsVirtualItem = false }).Where(id => !favorites.Contains(id)).ToArray();
                 for (int i = 0; i < snapshot.Length; i += 128) yield return snapshot.Skip(i).Take(128).ToArray();
             }
             if (scopes.GetProperty("collections").GetBoolean())
             {
-                var snapshot = _library.GetInternalItemIds(new InternalItemsQuery { Recursive = true, IncludeItemTypes = new[] { "BoxSet" }, IsVirtualItem = false });
+                var snapshot = _library.GetInternalItemIds(new InternalItemsQuery { Recursive = true, IncludeItemTypes = new[] { "BoxSet" }, IsVirtualItem = false })
+                    .Where(id => !favorites.Contains(id)).ToArray();
                 for (int i = 0; i < snapshot.Length; i += 128) yield return snapshot.Skip(i).Take(128).ToArray();
             }
         }

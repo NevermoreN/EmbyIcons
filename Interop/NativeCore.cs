@@ -8,6 +8,9 @@ using System.Reflection;
 
 namespace EmbyIcons.Interop
 {
+    internal sealed class SupersededImageJobException : OperationCanceledException
+    { internal SupersededImageJobException() : base("The image job was superseded.") { } }
+
     internal sealed class NativeCore : IDisposable
     {
         private const uint AbiVersion = 2;
@@ -78,7 +81,7 @@ namespace EmbyIcons.Interop
                 throw new IOException("The host did not return the expected enhanced output.");
             var result = Execute(new { op = "commit", id, generation, path = outputFile });
             if (!result.GetProperty("published").GetBoolean())
-                throw new OperationCanceledException("The image job was superseded.");
+                throw new SupersededImageJobException();
         }
 
         public void Dispose() => _handle.Dispose();

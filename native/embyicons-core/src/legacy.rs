@@ -110,6 +110,12 @@ pub fn key(row: &Value, config: &Value, settings: &Value, item: &Value) -> Optio
 }
 
 pub fn matches_metadata(row: &Value, item: &Value, settings: &Value) -> bool {
+    // Legacy projections did not include the favorite count. Their artifacts
+    // cannot establish the server-wide count required by the current renderer.
+    if item["favorite_users"].as_array()
+        .is_some_and(|users| users.iter().any(|v| v.as_bool() == Some(true))) {
+        return false;
+    }
     let mut input = String::new();
     if alignment(settings, "CommunityScoreIconAlignment") > 0 {
         input.push_str("c=");

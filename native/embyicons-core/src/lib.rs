@@ -320,6 +320,16 @@ fn execute(context: &Context, command: Value) -> Result<Value, String> {
                 core.records.remove(&id);
                 core.dirty.insert(engine::partition(id));
             } else if ["Movie", "Series", "BoxSet"].contains(&render::text(&command, "kind", "")) {
+                if render::flag(&command, "favorite_change", false) {
+                    core.legacy.remove(&id);
+                    if let Some(record) = core.records.get_mut(&id).filter(|r| r.legacy_path) {
+                        record.legacy_path = false;
+                        record.ready = false;
+                        record.generation = record.generation.saturating_add(1);
+                        record.target_key = format!("ei_r1_i{id}_{}", record.fingerprint);
+                        core.dirty.insert(engine::partition(id));
+                    }
+                }
                 core.enqueue(id, true);
                 core.prioritize(id);
             }

@@ -210,6 +210,39 @@ impl Engine {
         if !self.pilot.is_empty() && !self.pilot.contains(&item["id"].as_u64()?) {
             return None;
         }
+        let mapped = self.mapped_profile(item);
+        let favorite = item["favorite_users"].as_array()
+            .is_some_and(|users| users.iter().any(|v| v.as_bool() == Some(true)));
+        if !favorite {
+            return mapped;
+        }
+        let mut global = self.config["Profiles"].as_array().and_then(|profiles| profiles.iter()
+            .find(|p| alignment(&p["Settings"], "FavoriteCountIconAlignment") > 0))
+            .cloned().unwrap_or_else(|| json!({"Settings":{
+                "FavoriteCountIconAlignment":1,"FavoriteCountOverlayHorizontal":false,"IconSize":10
+            }}));
+        global["Id"] = json!("global-favorites");
+        global["Settings"]["EnableForPosters"] = json!(true);
+        global["Settings"]["UseCollectionLiteMode"] = json!(true);
+        for group in GROUPS {
+            if group != "FavoriteCount" {
+                global["Settings"][format!("{group}IconAlignment")] = json!(0);
+            }
+        }
+        if let Some(mut profile) = mapped.filter(|p| supported(item, &p["Settings"])) {
+            if alignment(&profile["Settings"], "FavoriteCountIconAlignment") == 0 {
+                for (key, value) in global["Settings"].as_object().unwrap() {
+                    if key.starts_with("FavoriteCount") {
+                        profile["Settings"][key] = value.clone();
+                    }
+                }
+            }
+            Some(profile)
+        } else {
+            Some(global)
+        }
+    }
+    fn mapped_profile(&self, item: &Value) -> Option<Value> {
         let mappings = self.config["LibraryProfileMappings"].as_array()?;
         let direct = if text(item, "kind", "") == "BoxSet" {
             item["parent_id"].as_u64().map(|i| i.to_string())
@@ -410,7 +443,9 @@ impl Engine {
                     }
                 }
             }
-        } else if record.fingerprint != fingerprint {
+        } else if record.fingerprint != fingerprint
+            || (record.legacy_path && data["favorites"].as_u64().unwrap_or(0) > 0)
+        {
             record.generation = record
                 .generation
                 .checked_add(1)
@@ -543,8 +578,19 @@ impl Engine {
     pub fn prioritize(&mut self, id: u64) {
         if self.queued.contains(&id) {
             self.pending.retain(|item| *item != id);
-            self.pending.push_front(id);
+        } else {
+            if !self.records.contains_key(&id) {
+                return;
+            }
+            if self.pending.len() >= 4096 {
+                if let Some(deferred) = self.pending.pop_back() {
+                    self.queued.remove(&deferred);
+                }
+                self.reconcile = true;
+            }
+            self.queued.insert(id);
         }
+        self.pending.push_front(id);
     }
     pub fn scan_backpressure(&self) -> bool {
         self.pending.len() > 3500
@@ -737,6 +783,37 @@ pub fn source(item: &Value, record: Option<&Record>) -> Result<(String, String),
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn global_favorites_work_without_mapping_and_withdraw_after_last_user() {
+        let mut core = Engine::default();
+        core.config = json!({"Profiles":[],"LibraryProfileMappings":[]});
+        core.libraries = json!([]);
+        let mut item = json!({"id":1,"kind":"Movie","favorite_users":[true,true]});
+        let profile = core.profile(&item).unwrap();
+        let legacy = json!({"Bindings":{"0":{"DataProjection":"d"}},"Inputs":{"d":{"Light":hash("")}}});
+        assert!(!crate::legacy::matches_metadata(&legacy, &item, &profile["Settings"]));
+        let visual = crate::render::visual_data(&profile["Settings"], &json!({"favorites":2,"community":8.1}));
+        assert_eq!(visual.as_object().unwrap().len(), 1);
+        assert_eq!(visual["FavoriteCount"]["label"], "2");
+        for id in 2..=4097 {
+            core.enqueue(id, true);
+        }
+        assert!(!core.enqueue(1, true));
+        core.prioritize(1);
+        assert_eq!(core.pending.len(), 4096);
+        let next = core.next();
+        assert_eq!(next["id"], 1);
+        let job = core.observed(1, next["sequence"].as_u64().unwrap(), item.clone(),
+            Some(profile), json!({"favorites":2}), "stamp".into(), "hash".into()).unwrap();
+        assert!(job["generation"].as_u64().is_some());
+        item["favorite_users"] = json!([false,true]);
+        assert!(core.profile(&item).is_some());
+        item["favorite_users"] = json!([false,false]);
+        assert!(core.profile(&item).is_none());
+        core.observed(1, 1, item, None, Value::Null, String::new(), String::new()).unwrap();
+        assert!(!core.records.contains_key(&1));
+    }
 
     #[test]
     fn absent_enabled_data_skips_and_unpublishes_until_data_arrives() {
