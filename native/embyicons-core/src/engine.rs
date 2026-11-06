@@ -86,7 +86,7 @@ pub struct Record {
     pub error: String,
     pub waiting_input: bool,
     #[serde(skip)]
-    pub inspecting: bool,
+    pub inspecting: Option<u64>,
     #[serde(skip)]
     pub automatic: bool,
     #[serde(skip)]
@@ -115,6 +115,7 @@ pub struct Engine {
     pub dirty: HashSet<usize>,
     maintenance: Vec<u64>,
     cursor: usize,
+    sequence: u64,
     pub reconcile: bool,
     pub drawn: u64,
     pub reused: u64,
@@ -187,6 +188,7 @@ impl Engine {
                 self.dirty.insert(b);
             }
         }
+        self.sequence = self.records.values().map(|r| r.event_seq.max(r.generation)).max().unwrap_or(0);
         self.maintenance = self.records.keys().copied().collect();
         self.legacy = legacy::read(&data.join("image-state-v2"));
         self.reconcile = true;
@@ -199,9 +201,11 @@ impl Engine {
         self.libraries = libraries.clone();
         self.reconcile = true;
         for record in self.records.values_mut() {
-            record.event_seq = record.event_seq.saturating_add(1);
+            self.sequence = self.sequence.max(record.event_seq).saturating_add(1);
+            record.event_seq = self.sequence;
             if record.running.is_some() {
-                record.generation = record.generation.saturating_add(1);
+                self.sequence = self.sequence.max(record.generation).saturating_add(1);
+                record.generation = self.sequence;
             }
         }
         Ok(json!({"ok":true}))
@@ -304,7 +308,8 @@ impl Engine {
             self.maintenance.push(id);
         }
         let record = self.records.entry(id).or_default();
-        record.event_seq = record.event_seq.saturating_add(1);
+        self.sequence = self.sequence.max(record.event_seq).saturating_add(1);
+        record.event_seq = self.sequence;
         record.automatic |= automatic;
         record.attempts = 0;
         record.due = now_millis();
@@ -330,11 +335,11 @@ impl Engine {
             let Some(record) = self.records.get_mut(&id) else {
                 continue;
             };
-            if record.inspecting || record.running.is_some() || record.due > now {
+            if record.inspecting.is_some() || record.running.is_some() || record.due > now {
                 self.push(id);
                 continue;
             }
-            record.inspecting = true;
+            record.inspecting = Some(record.event_seq);
             return json!({"id":id,"sequence":record.event_seq});
         }
         Value::Null
@@ -349,6 +354,17 @@ impl Engine {
         source_stamp: String,
         source_hash: String,
     ) -> Result<Value, String> {
+        let Some(record) = self.records.get_mut(&id) else {
+            return Ok(json!({"superseded":true}));
+        };
+        if record.inspecting.is_some_and(|owner| owner != sequence) {
+            return Ok(json!({"superseded":true}));
+        }
+        record.inspecting = None;
+        if record.event_seq != sequence {
+            self.push(id);
+            return Ok(json!({"superseded":true}));
+        }
         let Some(profile) = profile else {
             self.records.remove(&id);
             self.dirty.insert(bucket(id));
@@ -421,17 +437,13 @@ impl Engine {
             &json!({"settings":render_settings,"data":visual,"source":source_hash}).to_string(),
         );
         let record = self.records.entry(id).or_default();
-        record.inspecting = false;
         record.inspected_seq = sequence;
-        if record.event_seq != sequence {
-            self.push(id);
-            return Ok(json!({"superseded":true}));
-        }
         let host_changed = record.generation > 0
             && (record.item["image_ticks"] != item["image_ticks"]
                 || record.item["original"] != item["original"]);
         if record.generation == 0 {
-            record.generation = 1;
+            self.sequence = self.sequence.max(record.generation).saturating_add(1);
+            record.generation = self.sequence;
             record.base_key = format!("ei_r1_i{id}_{fingerprint}");
             record.target_key = record.base_key.clone();
             if let Some(row) = self.legacy.remove(&id) {
@@ -446,19 +458,15 @@ impl Engine {
         } else if record.fingerprint != fingerprint
             || (record.legacy_path && data["favorites"].as_u64().unwrap_or(0) > 0)
         {
-            record.generation = record
-                .generation
-                .checked_add(1)
-                .ok_or("generation exhausted")?;
+            self.sequence = self.sequence.max(record.generation).saturating_add(1);
+            record.generation = self.sequence;
             record.target_key = format!("ei_r1_i{id}_{fingerprint}");
             record.legacy_path = false;
             record.ready = false;
             record.recovery = 0;
         } else if host_changed {
-            record.generation = record
-                .generation
-                .checked_add(1)
-                .ok_or("generation exhausted")?;
+            self.sequence = self.sequence.max(record.generation).saturating_add(1);
+            record.generation = self.sequence;
             record.ready = false;
         }
         record.fingerprint = fingerprint;
@@ -485,9 +493,11 @@ impl Engine {
         )
     }
     pub fn commit(&mut self, id: u64, generation: u64, path: &str) -> Result<Value, String> {
-        let record = self.records.get_mut(&id).ok_or("item was removed")?;
+        let Some(record) = self.records.get_mut(&id) else {
+            return Ok(json!({"published":false}));
+        };
         if record.running != Some(generation) {
-            return Err("job does not own this item".into());
+            return Ok(json!({"published":false}));
         }
         record.running = None;
         if record.generation != generation
@@ -515,23 +525,39 @@ impl Engine {
     pub fn missing(&mut self, id: u64, generation: u64) -> Result<Value, String> {
         let record = self.records.get_mut(&id).ok_or("item was removed")?;
         if record.ready && record.published_generation == generation {
-            record.generation = record
-                .generation
-                .checked_add(1)
-                .ok_or("generation exhausted")?;
+            self.sequence = self.sequence.max(record.generation).saturating_add(1);
+            record.generation = self.sequence;
             record.recovery = record.recovery.checked_add(1).ok_or("recovery exhausted")?;
             record.ready = false;
             self.dirty.insert(bucket(id));
         }
         Ok(json!({"ready":record.ready,"generation":record.generation}))
     }
+    pub fn advance_generation(&mut self, id: u64) {
+        let record = self.records.get_mut(&id).unwrap();
+        self.sequence = self.sequence.max(record.generation).saturating_add(1);
+        record.generation = self.sequence;
+    }
+    pub fn abandon(&mut self, id: u64, generation: u64) {
+        if let Some(record) = self.records.get_mut(&id) {
+            if record.running != Some(generation) {
+                return;
+            }
+            record.running = None;
+            self.push(id);
+        }
+    }
     pub fn failed(&mut self, id: u64, generation: u64, message: &str) -> Value {
         if let Some(record) = self.records.get_mut(&id) {
-            record.inspecting = false;
+            if generation > 0 && record.running != Some(generation) {
+                return Value::Null;
+            }
+            record.inspecting = None;
             record.waiting_input = false;
             if record.running == Some(generation) {
                 record.running = None;
-                record.generation = record.generation.saturating_add(1);
+                self.sequence = self.sequence.max(record.generation).saturating_add(1);
+                record.generation = self.sequence;
             }
             record.attempts = record.attempts.saturating_add(1);
             record.error = message.chars().take(256).collect();
@@ -573,7 +599,7 @@ impl Engine {
         }
     }
     pub fn stats(&self) -> Value {
-        json!({"Backend":"Rust","Abi":2,"Tracked":self.records.len(),"Ready":self.records.values().filter(|r|r.ready).count(),"Pending":self.pending.len(),"Running":self.records.values().filter(|r|r.running.is_some()||r.inspecting).count(),"Drawn":self.drawn,"RenderCalls":self.render_calls,"Reused":self.reused,"DrawMilliseconds":self.draw_ms,"Failed":self.records.values().filter(|r|!r.error.is_empty() && !r.waiting_input).count(),"WaitingInput":self.records.values().filter(|r|r.waiting_input).count(),"NeedsReconcile":self.reconcile,"PilotIds":self.pilot,"LastManual":self.last_manual})
+        json!({"Backend":"Rust","Abi":2,"Tracked":self.records.len(),"Ready":self.records.values().filter(|r|r.ready).count(),"Pending":self.pending.len(),"Running":self.records.values().filter(|r|r.running.is_some()||r.inspecting.is_some()).count(),"Drawn":self.drawn,"RenderCalls":self.render_calls,"Reused":self.reused,"DrawMilliseconds":self.draw_ms,"Failed":self.records.values().filter(|r|!r.error.is_empty() && !r.waiting_input).count(),"WaitingInput":self.records.values().filter(|r|r.waiting_input).count(),"NeedsReconcile":self.reconcile,"PilotIds":self.pilot,"LastManual":self.last_manual})
     }
     pub fn prioritize(&mut self, id: u64) {
         if self.queued.contains(&id) {
@@ -660,7 +686,7 @@ impl Engine {
                 if self
                     .records
                     .get(id)
-                    .is_some_and(|r| !r.automatic && !r.inspecting && r.running.is_none())
+                    .is_some_and(|r| !r.automatic && r.inspecting.is_none() && r.running.is_none())
                 {
                     self.queued.remove(id);
                     self.pending.retain(|i| i != id);
@@ -811,8 +837,49 @@ mod tests {
         assert!(core.profile(&item).is_some());
         item["favorite_users"] = json!([false,false]);
         assert!(core.profile(&item).is_none());
-        core.observed(1, 1, item, None, Value::Null, String::new(), String::new()).unwrap();
+        core.observed(1, core.records[&1].event_seq, item, None, Value::Null, String::new(), String::new()).unwrap();
         assert!(!core.records.contains_key(&1));
+    }
+
+    #[test]
+    fn stale_observations_and_jobs_preserve_newer_favorites() {
+        let mut core = Engine::default();
+        core.enqueue(1, true);
+        let old = core.next()["sequence"].as_u64().unwrap();
+        core.enqueue(1, true);
+        let result = core.observed(1, old, json!({}), None, Value::Null, String::new(), String::new()).unwrap();
+        assert_eq!(result["superseded"], true);
+        assert!(core.records.contains_key(&1));
+        let sequence = core.next()["sequence"].as_u64().unwrap();
+        let profile = json!({"Id":"test","Settings":{"FavoriteCountIconAlignment":1}});
+        let job = core.observed(1, sequence, json!({"kind":"Movie"}), Some(profile),
+            json!({"favorites":1}), "stamp".into(), "hash".into()).unwrap();
+        let generation = job["generation"].as_u64().unwrap();
+        core.advance_generation(1);
+        core.abandon(1, generation);
+        assert_eq!(core.records[&1].attempts, 0);
+        assert!(core.records[&1].error.is_empty());
+        let newer = core.begin(1).unwrap()["generation"].as_u64().unwrap();
+        assert_eq!(core.commit(1, generation, "old.png").unwrap()["published"], false);
+        core.abandon(1, generation);
+        core.failed(1, generation, "stale failure");
+        assert_eq!(core.records[&1].running, Some(newer));
+        assert_eq!(core.records[&1].attempts, 0);
+        core.records.remove(&1);
+        assert_eq!(core.commit(1, newer, "old.png").unwrap()["published"], false);
+        core.enqueue(1, true);
+        assert!(core.records[&1].event_seq > sequence);
+        let new_sequence = core.next()["sequence"].as_u64().unwrap();
+        core.observed(1, sequence, json!({}), None, Value::Null, String::new(), String::new()).unwrap();
+        assert!(core.records.contains_key(&1));
+        assert_eq!(core.records[&1].inspecting, Some(new_sequence));
+        let job = core.observed(1, new_sequence, json!({"kind":"Movie"}),
+            Some(json!({"Id":"test","Settings":{"FavoriteCountIconAlignment":1}})),
+            json!({"favorites":1}), "stamp".into(), "hash".into()).unwrap();
+        let new_generation = job["generation"].as_u64().unwrap();
+        assert!(new_generation > newer);
+        core.abandon(1, newer);
+        assert_eq!(core.records[&1].running, Some(new_generation));
     }
 
     #[test]

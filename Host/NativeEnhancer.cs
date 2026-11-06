@@ -43,6 +43,7 @@ namespace EmbyIcons
             }
             job.Token.ThrowIfCancellationRequested(); token.ThrowIfCancellationRequested();
             var result = core.Execute(new { op = "render", id = job.Id, generation = job.Generation, input, output });
+            if (result.TryGetProperty("superseded", out _)) throw new SupersededImageJobException();
             if (result.TryGetProperty("legacy_miss", out _)) throw new LegacyAliasMissingException();
             job.Token.ThrowIfCancellationRequested(); token.ThrowIfCancellationRequested();
             return Task.CompletedTask;

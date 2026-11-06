@@ -211,6 +211,24 @@ struct Overlay {
     horizontal: bool,
 }
 
+fn decode_image(bytes: &[u8]) -> Result<Image, String> {
+    if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
+        let mut decoder = image_webp::WebPDecoder::new(std::io::Cursor::new(bytes))
+            .map_err(|e| format!("WebP decode failed: {e}"))?;
+        let (width, height) = decoder.dimensions();
+        let mut pixels = vec![0; decoder.output_buffer_size().ok_or("WebP image is too large")?];
+        decoder.read_image(&mut pixels).map_err(|e| format!("WebP decode failed: {e}"))?;
+        let rgba = if decoder.has_alpha() { pixels } else {
+            pixels.chunks_exact(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect()
+        };
+        let info = sk::ImageInfo::new((width as i32, height as i32), sk::ColorType::RGBA8888,
+            sk::AlphaType::Unpremul, None);
+        return sk::images::raster_from_data(&info, Data::new_copy(&rgba), width as usize * 4)
+            .ok_or_else(|| "WebP raster creation failed".into());
+    }
+    Image::from_encoded(Data::new_copy(bytes)).ok_or_else(|| "image decode failed".into())
+}
+
 pub fn draw(
     input: &str,
     original: &str,
@@ -221,8 +239,7 @@ pub fn draw(
     smoothing: bool,
 ) -> Result<Value, String> {
     validate_output(Path::new(original), Path::new(output), Path::new(cache))?;
-    let image = Image::from_encoded(Data::new_copy(&fs::read(input).map_err(|e| e.to_string())?))
-        .ok_or("image decode failed")?;
+    let image = decode_image(&fs::read(input).map_err(|e| e.to_string())?)?;
     let (width, height) = (image.width(), image.height());
     let mut surface = sk::surfaces::raster_n32_premul((width, height))
         .ok_or("could not allocate drawing surface")?;
@@ -518,4 +535,28 @@ fn parse_color(value: &str) -> Option<Color> {
         return None;
     }
     Some(Color::from_rgb((n >> 16) as u8, (n >> 8) as u8, n as u8))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn webp_decode_preserves_color_and_alpha() {
+        for (pixels, color, expected) in [
+            (vec![255, 0, 0, 0, 255, 0], image_webp::ColorType::Rgb8,
+                vec![255, 0, 0, 255, 0, 255, 0, 255]),
+            (vec![255, 0, 0, 255, 0, 255, 0, 128], image_webp::ColorType::Rgba8,
+                vec![255, 0, 0, 255, 0, 255, 0, 128]),
+        ] {
+            let mut encoded = Vec::new();
+            image_webp::WebPEncoder::new(&mut encoded).encode(&pixels, 2, 1, color).unwrap();
+            let image = decode_image(&encoded).unwrap();
+            assert_eq!((image.width(), image.height()), (2, 1));
+            let info = sk::ImageInfo::new((2, 1), sk::ColorType::RGBA8888, sk::AlphaType::Unpremul, None);
+            let mut rgba = vec![0u8; 8];
+            assert!(image.read_pixels(&info, &mut rgba, 8, (0, 0), sk::image::CachingHint::Disallow));
+            assert_eq!(rgba, expected);
+        }
+    }
 }

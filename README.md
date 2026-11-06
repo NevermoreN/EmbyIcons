@@ -1,6 +1,6 @@
 # EmbyIcons Rust
 
-为 Emby 的 Primary 海报制作评分、分级和收藏叠加图。当前版本 `5.61.1.7-nevermore.rust.3`，目标环境为 Linux x86_64、Emby 4.10.2.0。
+为 Emby 的 Primary 海报制作评分、分级和收藏叠加图。当前版本 `5.61.1.7-nevermore.rust.4`，目标环境为 Linux x86_64、Emby 4.10.2.0。
 
 ## 分支
 

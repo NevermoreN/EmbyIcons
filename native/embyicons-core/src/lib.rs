@@ -76,6 +76,9 @@ fn execute(context: &Context, command: Value) -> Result<Value, String> {
             Ok(source) => source,
             Err(error) => {
                 let mut core = context.engine.lock().unwrap();
+                if core.records.get(&id).is_none_or(|r| r.event_seq != sequence) {
+                    return core.observed(id, sequence, item, None, Value::Null, String::new(), String::new());
+                }
                 core.failed(id, 0, &error);
                 if let Some(record) = core.records.get_mut(&id) {
                     record.waiting_input = true;
@@ -156,11 +159,14 @@ fn execute(context: &Context, command: Value) -> Result<Value, String> {
     }
     if op == "render" {
         let (record, cache, smoothing) = {
-            let core = context.engine.lock().unwrap();
-            let record = core.records.get(&id).ok_or("render item was removed")?;
-            if record.running != Some(generation) || record.generation != generation {
-                return Err("render version was superseded".into());
+            let mut core = context.engine.lock().unwrap();
+            let valid = core.records.get(&id).is_some_and(|r|
+                r.running == Some(generation) && r.generation == generation);
+            if !valid {
+                core.abandon(id, generation);
+                return Ok(json!({"superseded":true}));
             }
+            let record = &core.records[&id];
             (
                 record.clone(),
                 core.cache.clone(),
@@ -169,14 +175,16 @@ fn execute(context: &Context, command: Value) -> Result<Value, String> {
         };
         if record.legacy_path {
             let mut core = context.engine.lock().unwrap();
-            if let Some(current) = core.records.get_mut(&id) {
-                if current.running == Some(generation) {
-                    current.running = None;
-                    current.generation += 1;
-                    current.legacy_path = false;
-                    current.target_key = format!("ei_r1_i{id}_{}", current.fingerprint);
-                }
+            if !core.records.get(&id).is_some_and(|r|
+                r.running == Some(generation) && r.generation == generation) {
+                core.abandon(id, generation);
+                return Ok(json!({"superseded":true}));
             }
+            let current = core.records.get_mut(&id).unwrap();
+            current.running = None;
+            current.legacy_path = false;
+            current.target_key = format!("ei_r1_i{id}_{}", current.fingerprint);
+            core.advance_generation(id);
             core.enqueue(id, true);
             return Ok(json!({"legacy_miss":true}));
         }
@@ -241,13 +249,11 @@ fn execute(context: &Context, command: Value) -> Result<Value, String> {
                 .is_ok_and(|(stamp, _)| stamp == record.source_stamp);
             if !unchanged {
                 let mut core = context.engine.lock().unwrap();
-                if let Some(current) = core.records.get_mut(&id) {
-                    if current.running == Some(generation) {
-                        current.running = None;
-                        current.generation += 1;
-                    }
+                if core.records.get(&id).is_some_and(|r| r.running == Some(generation)) {
+                    core.records.get_mut(&id).unwrap().running = None;
+                    core.advance_generation(id);
+                    core.enqueue(id, true);
                 }
-                core.enqueue(id, true);
                 return Ok(json!({"published":false}));
             }
         }
@@ -325,8 +331,8 @@ fn execute(context: &Context, command: Value) -> Result<Value, String> {
                     if let Some(record) = core.records.get_mut(&id).filter(|r| r.legacy_path) {
                         record.legacy_path = false;
                         record.ready = false;
-                        record.generation = record.generation.saturating_add(1);
                         record.target_key = format!("ei_r1_i{id}_{}", record.fingerprint);
+                        core.advance_generation(id);
                         core.dirty.insert(engine::partition(id));
                     }
                 }
@@ -348,7 +354,7 @@ fn execute(context: &Context, command: Value) -> Result<Value, String> {
             render::text(&command, "error", "background image job failed"),
         )),
         "cancel" => {
-            core.failed(id, generation, "cancelled");
+            core.abandon(id, generation);
             Ok(Value::Null)
         }
         "remove" => {
